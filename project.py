@@ -256,6 +256,7 @@ def setup_and_train_classifier():
                               "t_hog:" + str(round(time_extract_hog, 2)),
                               "t_trn:" + str(round(time_train, 2)),
                               "accur:" + str(accuracy))
+                        sys.stdout.flush()
 
 def one_hog(cars, notcars, colorspace, orient, pix_per_cell, cell_per_block, hog_channel):
     t=time.time()
