@@ -22,7 +22,6 @@ from sklearn.model_selection import train_test_split
 from moviepy.editor import VideoFileClip
 from IPython.display import HTML
 
-distortion_coeffs_pickle_file = "camera_cal/dist_pickle.p"
 import argparse
 parser = argparse.ArgumentParser()
 parser.add_argument("-v", '--verbose', action='store_true', help="be verbose")
@@ -35,9 +34,14 @@ args = parser.parse_args()
 g_error_frames = 0
 g_filename = "none"
 
+X_train = None
+X_test = None
+y_train = None
+y_test = None
+
 # The goals / steps of this project are the following:
 
-# _ 1. Perform a Histogram of Oriented Gradients (HOG) feature extraction on a labeled training set of images and train a classifier Linear SVM classifier
+# X 1. Perform a Histogram of Oriented Gradients (HOG) feature extraction on a labeled training set of images and train a classifier Linear SVM classifier
 # _ 2. Optionally, you can also apply a color transform and append binned color features, as well as histograms of color, to your HOG feature vector. 
 # _ 3. Note: for those first two steps don't forget to normalize your features and randomize a selection for training and testing.
 # _ 4. Implement a sliding-window technique and use your trained classifier to search for vehicles in images.
@@ -209,8 +213,7 @@ def extract_features(imgs, cspace='RGB', orient=9,
     # Return list of feature vectors
     return features
 
-def setup_and_train_classifier():
-
+def setup_training_data():
     image_files_vehicle = glob.glob("vehicles/**/*.png")
     image_files_non_vehicle = glob.glob("non-vehicles/**/*.png")
 
@@ -219,12 +222,6 @@ def setup_and_train_classifier():
         return
 
     print("Found {:d} vehicle images, {:d} non-vehicle images".format(len(image_files_vehicle), len(image_files_non_vehicle)))
-
-    #colorspace = 'YUV' # Can be RGB, HSV, LUV, HLS, YUV, YCrCb
-    #orient = 11
-    #pix_per_cell = 16
-    #cell_per_block = 2
-    #hog_channel = "ALL" # Can be 0, 1, 2, or "ALL"
 
     # Reduce the sample size for testing because HOG features are slow to compute
     sample_size = 0
@@ -236,29 +233,77 @@ def setup_and_train_classifier():
         cars = image_files_vehicle[0:sample_size]
         notcars = image_files_non_vehicle[0:sample_size]
 
-    colorspaces = ['RGB', 'HSV', 'LUV', 'HLS', 'YUV', 'YCrCb']
-    orientations = [6, 7, 8, 9, 10, 11, 12]
-    pixels_per_cell = [8, 16, 32]
-    cells_per_block = [2]
-    hog_channels = ["ALL"]
+    return cars, notcars
 
-    for colorspace in colorspaces:
-        for orientation in orientations:
-            for pix_per_cell in pixels_per_cell:
-                for cell_per_block in cells_per_block:
-                    for hog_channel in hog_channels:
-                        time_extract_hog, time_train, accuracy = one_hog(cars, notcars, colorspace, orientation, pix_per_cell, cell_per_block, hog_channel)
-                        print("color:" + colorspace,
-                              "orien:" + str(orientation),
-                              "pixel:" + str(pix_per_cell),
-                              "cells:" + str(cell_per_block),
-                              "chans:" + str(hog_channel),
-                              "t_hog:" + str(round(time_extract_hog, 2)),
-                              "t_trn:" + str(round(time_train, 2)),
-                              "accur:" + str(accuracy))
-                        sys.stdout.flush()
+def setup_and_train_classifier():
+
+    cars, notcars = setup_training_data()
+
+    run_for_real = True
+
+    svc = None
+
+    if run_for_real:
+        colorspace = 'LUV' # Can be RGB, HSV, LUV, HLS, YUV, YCrCb
+        orientation = 9
+        pix_per_cell = 16
+        cell_per_block = 2
+        hog_channel = "ALL" # Can be 0, 1, 2, or "ALL"
+
+        time_extract_hog, time_train, accuracy, svc = one_hog(cars, notcars, colorspace, orientation, pix_per_cell, cell_per_block, hog_channel)
+
+        print("color:" + colorspace,
+              "orien:" + str(orientation),
+              "pixel:" + str(pix_per_cell),
+              "cells:" + str(cell_per_block),
+              "chans:" + str(hog_channel),
+              "t_hog:" + str(round(time_extract_hog, 2)),
+              "t_trn:" + str(round(time_train, 2)),
+              "accur:" + str(accuracy))
+        sys.stdout.flush()
+
+        test_trained_svc(svc)
+
+    else:
+        # Training runs
+        colorspaces = ['RGB', 'HSV', 'LUV', 'HLS', 'YUV', 'YCrCb']
+        orientations = [6, 7, 8, 9, 10, 11, 12]
+        pixels_per_cell = [8, 16, 32]
+        cells_per_block = [2]
+        hog_channels = ["ALL"]
+        
+        # Best run from these:
+        # color	orientation	pixels	cells	channels	time hog	time train	total time	accuracy
+        # LUV	9	16	2	ALL	48.7	4.74	53.44	0.9817
+        for colorspace in colorspaces:
+            for orientation in orientations:
+                for pix_per_cell in pixels_per_cell:
+                    for cell_per_block in cells_per_block:
+                        for hog_channel in hog_channels:
+                            time_extract_hog, time_train, accuracy, svc = one_hog(cars, notcars, colorspace, orientation, pix_per_cell, cell_per_block, hog_channel)
+                            print("color:" + colorspace,
+                                  "orien:" + str(orientation),
+                                  "pixel:" + str(pix_per_cell),
+                                  "cells:" + str(cell_per_block),
+                                  "chans:" + str(hog_channel),
+                                  "t_hog:" + str(round(time_extract_hog, 2)),
+                                  "t_trn:" + str(round(time_train, 2)),
+                                  "accur:" + str(accuracy))
+                            sys.stdout.flush()
+    return svc
+
+def test_trained_svc(trained_svc):
+    global X_test
+    global y_test
+
+    accuracy = round(trained_svc.score(X_test, y_test), 4)
+    print("test accuracy:", accuracy)
 
 def one_hog(cars, notcars, colorspace, orient, pix_per_cell, cell_per_block, hog_channel):
+    global X_train
+    global X_test
+    global y_train
+    global y_test
     t=time.time()
     car_features = extract_features(cars, cspace=colorspace, orient=orient, 
                             pix_per_cell=pix_per_cell, cell_per_block=cell_per_block, 
@@ -278,7 +323,8 @@ def one_hog(cars, notcars, colorspace, orient, pix_per_cell, cell_per_block, hog
     
     # Split up data into randomized training and test sets
     rand_state = np.random.randint(0, 100)
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=rand_state)
+    #X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=rand_state)
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)#rand_state)
 
     if False: # Only needed if combining features other than HOG
         # Fit a per-column scaler
@@ -300,7 +346,7 @@ def one_hog(cars, notcars, colorspace, orient, pix_per_cell, cell_per_block, hog
     #print(round(t2-t, 2), 'Seconds to train SVC...')
     # Check the score of the SVC
     accuracy = round(svc.score(X_test, y_test), 4)
-    return time_extract_hog, time_train, accuracy
+    return time_extract_hog, time_train, accuracy, svc
 
     print('Test Accuracy of SVC = ', round(svc.score(X_test, y_test), 4))
     # Check the prediction time for a single sample
@@ -313,13 +359,36 @@ def one_hog(cars, notcars, colorspace, orient, pix_per_cell, cell_per_block, hog
 
 
 def main():
+    global X_train
+    global X_test
+    global y_train
+    global y_test
 
     if args.verbose:
         print("being verbose")
 
-    if args.train:
-        setup_and_train_classifier()
+    pickle_filename = "trained-svc.p"
+    svc = None
 
+    if args.train:
+        svc = setup_and_train_classifier()
+        svc_pickle = {}
+        svc_pickle["svc"] = svc
+        svc_pickle["X_train"] = X_train
+        svc_pickle["X_test"] = X_test
+        svc_pickle["y_train"] = y_train
+        svc_pickle["y_test"] = y_test
+        pickle.dump(svc_pickle, open(pickle_filename, "wb"))
+        print("Saved trained SVM data in", pickle_filename)
+    else:
+        svc_pickle = pickle.load( open( pickle_filename, "rb" ) )
+        svc = svc_pickle["svc"]
+        X_train = svc_pickle["X_train"]
+        X_test = svc_pickle["X_test"]
+        y_train = svc_pickle["y_train"]
+        y_test = svc_pickle["y_test"]
+        print("Read trained SVM data from", pickle_filename)
+        test_trained_svc(svc)
 
 if __name__ == "__main__":
     main()
