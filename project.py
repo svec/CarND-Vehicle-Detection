@@ -26,8 +26,8 @@ import argparse
 parser = argparse.ArgumentParser()
 parser.add_argument("-v", '--verbose', action='store_true', help="be verbose")
 parser.add_argument("-t", '--train', action='store_true', help="setup & train classifier")
-#parser.add_argument("-n", '--num_images', type=int, help="number of images to process")
-#parser.add_argument("-f", '--image_files', type=str, help="file(s) to process, uses glob")
+parser.add_argument("-n", '--num_images', type=int, help="number of images to process")
+parser.add_argument("-f", '--image_files', type=str, help="file(s) to process, uses glob so you should use '' for expansion")
 #parser.add_argument("-m", '--video', action='store_true', help="process video instead of images")
 args = parser.parse_args()
 
@@ -38,6 +38,7 @@ X_train = None
 X_test = None
 y_train = None
 y_test = None
+hog_params = {}
 
 # The goals / steps of this project are the following:
 
@@ -236,12 +237,16 @@ def setup_training_data():
     return cars, notcars
 
 def setup_and_train_classifier():
+    global hog_params
+
+    if args.verbose:
+        print("Training classifier (this could take a few minutes)")
 
     cars, notcars = setup_training_data()
 
-    run_for_real = True
-
     svc = None
+
+    run_for_real = True
 
     if run_for_real:
         colorspace = 'LUV' # Can be RGB, HSV, LUV, HLS, YUV, YCrCb
@@ -249,6 +254,12 @@ def setup_and_train_classifier():
         pix_per_cell = 16
         cell_per_block = 2
         hog_channel = "ALL" # Can be 0, 1, 2, or "ALL"
+
+        hog_params["colorspace"] = colorspace
+        hog_params["orientation"] = orientation
+        hog_params["pix_per_cell"] = pix_per_cell
+        hog_params["cell_per_block"] = cell_per_block
+        hog_params["hog_channel"] = hog_channel
 
         time_extract_hog, time_train, accuracy, svc = one_hog(cars, notcars, colorspace, orientation, pix_per_cell, cell_per_block, hog_channel)
 
@@ -346,23 +357,155 @@ def one_hog(cars, notcars, colorspace, orient, pix_per_cell, cell_per_block, hog
     #print(round(t2-t, 2), 'Seconds to train SVC...')
     # Check the score of the SVC
     accuracy = round(svc.score(X_test, y_test), 4)
-    return time_extract_hog, time_train, accuracy, svc
 
     print('Test Accuracy of SVC = ', round(svc.score(X_test, y_test), 4))
     # Check the prediction time for a single sample
     t=time.time()
     n_predict = 10
     print('My SVC predicts: ', svc.predict(X_test[0:n_predict]))
+    print(X_test[0:n_predict].shape)
     print('For these',n_predict, 'labels: ', y_test[0:n_predict])
     t2 = time.time()
     print(round(t2-t, 5), 'Seconds to predict', n_predict,'labels with SVC')
+    return time_extract_hog, time_train, accuracy, svc
 
+# Define a single function that can extract features using hog sub-sampling and make predictions
+# Based on the Udacity lesson.
+def find_cars(img, ystart, ystop, scale, svc, X_scaler, colorspace, orientation, pix_per_cell, cell_per_block, hog_channel, spatial_size, hist_bins):
+    
+    draw_img = np.copy(img)
+    img = img.astype(np.float32)/255
+    
+    img_tosearch = img[ystart:ystop,:,:]
+
+    if colorspace != 'RGB':
+        if colorspace == 'HSV':
+            ctrans_tosearch = cv2.cvtColor(img_tosearch, cv2.COLOR_RGB2HSV)
+        elif colorspace == 'LUV':
+            ctrans_tosearch = cv2.cvtColor(img_tosearch, cv2.COLOR_RGB2LUV)
+        elif colorspace == 'HLS':
+            ctrans_tosearch = cv2.cvtColor(img_tosearch, cv2.COLOR_RGB2HLS)
+        elif colorspace == 'YUV':
+            ctrans_tosearch = cv2.cvtColor(img_tosearch, cv2.COLOR_RGB2YUV)
+        elif colorspace == 'YCrCb':
+            ctrans_tosearch = cv2.cvtColor(img_tosearch, cv2.COLOR_RGB2YCrCb)
+    else: ctrans_tosearch = np.copy(image)      
+
+    if scale != 1:
+        imshape = ctrans_tosearch.shape
+        ctrans_tosearch = cv2.resize(ctrans_tosearch, (np.int(imshape[1]/scale), np.int(imshape[0]/scale)))
+        
+    ch1 = ctrans_tosearch[:,:,0]
+    ch2 = ctrans_tosearch[:,:,1]
+    ch3 = ctrans_tosearch[:,:,2]
+
+    # Define blocks and steps as above
+    nxblocks = (ch1.shape[1] // pix_per_cell) - cell_per_block + 1
+    nyblocks = (ch1.shape[0] // pix_per_cell) - cell_per_block + 1 
+    nfeat_per_block = orientation*cell_per_block**2
+    
+    # 64 was the orginal sampling rate, with 8 cells and 8 pix per cell
+    window = 64
+    nblocks_per_window = (window // pix_per_cell) - cell_per_block + 1
+    cells_per_step = 2  # Instead of overlap, define how many cells to step
+    nxsteps = (nxblocks - nblocks_per_window) // cells_per_step + 1
+    nysteps = (nyblocks - nblocks_per_window) // cells_per_step + 1
+    
+    # Compute individual channel HOG features for the entire image
+    hog1 = get_hog_features(ch1, orientation, pix_per_cell, cell_per_block, feature_vec=False)
+    hog2 = get_hog_features(ch2, orientation, pix_per_cell, cell_per_block, feature_vec=False)
+    hog3 = get_hog_features(ch3, orientation, pix_per_cell, cell_per_block, feature_vec=False)
+    
+    for xb in range(nxsteps):
+        for yb in range(nysteps):
+            ypos = yb*cells_per_step
+            xpos = xb*cells_per_step
+            # Extract HOG for this patch
+            hog_feat1 = hog1[ypos:ypos+nblocks_per_window, xpos:xpos+nblocks_per_window].ravel() 
+            hog_feat2 = hog2[ypos:ypos+nblocks_per_window, xpos:xpos+nblocks_per_window].ravel() 
+            hog_feat3 = hog3[ypos:ypos+nblocks_per_window, xpos:xpos+nblocks_per_window].ravel() 
+            hog_features = np.hstack((hog_feat1, hog_feat2, hog_feat3))
+
+            xleft = xpos*pix_per_cell
+            ytop = ypos*pix_per_cell
+
+            # Extract the image patch
+            subimg = cv2.resize(ctrans_tosearch[ytop:ytop+window, xleft:xleft+window], (64,64))
+          
+            if False: # only using hog features
+                # Get color features
+                spatial_features = bin_spatial(subimg, size=spatial_size)
+                hist_features = color_hist(subimg, nbins=hist_bins)
+
+                # Scale features and make a prediction
+                test_features = X_scaler.transform(np.hstack((spatial_features, hist_features, hog_features)).reshape(1, -1))    
+                #test_features = X_scaler.transform(np.hstack((shape_feat, hist_feat)).reshape(1, -1))    
+                test_prediction = svc.predict(test_features)
+
+            # Reshape the hog features to be a 1-sample 2D array (required for svc.predict()).
+            hog_features = hog_features.reshape(1,-1)
+            test_prediction = svc.predict(hog_features)
+            
+            if test_prediction == 1:
+                xbox_left = np.int(xleft*scale)
+                ytop_draw = np.int(ytop*scale)
+                win_draw = np.int(window*scale)
+                cv2.rectangle(draw_img,(xbox_left, ytop_draw+ystart),(xbox_left+win_draw,ytop_draw+win_draw+ystart),(0,0,255),6) 
+                
+    return draw_img
+    
+def process_one_image(image, svc):
+    global hog_params
+    ystart = 400
+    ystop = 656
+    scale = 1.5
+    X_scaler = None
+    spatial_size = None
+    hist_bins = None
+
+    out_img = find_cars(image, ystart, ystop, scale, svc, X_scaler,
+                        hog_params["colorspace"],
+                        hog_params["orientation"],
+                        hog_params["pix_per_cell"],
+                        hog_params["cell_per_block"],
+                        hog_params["hog_channel"],
+                        spatial_size,
+                        hist_bins)
+
+    plt.imshow(out_img)
+    plt.show()
+
+def process_image_file(image_filename, svc):
+    global g_filename
+    g_filename = image_filename
+
+    if args.verbose:
+        print(image_filename)
+
+    image = mpimg.imread(image_filename) # reads in as RGB
+    process_one_image(image, svc)
+
+def process_images(svc, num, filenames=None):
+    if filenames:
+        image_filenames = glob.glob(filenames)
+        #image_filenames = image_filenames + glob.glob('test_images/*.jpg')
+    else:
+        image_filenames = glob.glob('test_images/*.jpg')
+
+    #print("files:", image_filenames)
+    count = 0
+    for image_filename in image_filenames:
+        if (num != None) and (count >= num):
+            break
+        process_image_file(image_filename, svc)
+        count = count + 1
 
 def main():
     global X_train
     global X_test
     global y_train
     global y_test
+    global hog_params
 
     if args.verbose:
         print("being verbose")
@@ -378,6 +521,7 @@ def main():
         svc_pickle["X_test"] = X_test
         svc_pickle["y_train"] = y_train
         svc_pickle["y_test"] = y_test
+        svc_pickle["hog_params"] = hog_params
         pickle.dump(svc_pickle, open(pickle_filename, "wb"))
         print("Saved trained SVM data in", pickle_filename)
     else:
@@ -387,8 +531,12 @@ def main():
         X_test = svc_pickle["X_test"]
         y_train = svc_pickle["y_train"]
         y_test = svc_pickle["y_test"]
+        hog_params = svc_pickle["hog_params"]
         print("Read trained SVM data from", pickle_filename)
+        print("hog_params:", hog_params)
         test_trained_svc(svc)
+
+        process_images(svc, args.num_images, args.image_files)
 
 if __name__ == "__main__":
     main()
