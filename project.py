@@ -395,9 +395,12 @@ def find_cars(img, ystart, ystop, scale, svc, X_scaler, colorspace, orientation,
         imshape = ctrans_tosearch.shape
         ctrans_tosearch = cv2.resize(ctrans_tosearch, (np.int(imshape[1]/scale), np.int(imshape[0]/scale)))
         
-    ch1 = ctrans_tosearch[:,:,0]
-    ch2 = ctrans_tosearch[:,:,1]
-    ch3 = ctrans_tosearch[:,:,2]
+    if hog_channel == "ALL":
+        ch1 = ctrans_tosearch[:,:,0]
+        ch2 = ctrans_tosearch[:,:,1]
+        ch3 = ctrans_tosearch[:,:,2]
+    else:
+        ch1 = ctrans_tosearch[:,:,hog_channel]
 
     # Define blocks and steps as above
     nxblocks = (ch1.shape[1] // pix_per_cell) - cell_per_block + 1
@@ -413,8 +416,9 @@ def find_cars(img, ystart, ystop, scale, svc, X_scaler, colorspace, orientation,
     
     # Compute individual channel HOG features for the entire image
     hog1 = get_hog_features(ch1, orientation, pix_per_cell, cell_per_block, feature_vec=False)
-    hog2 = get_hog_features(ch2, orientation, pix_per_cell, cell_per_block, feature_vec=False)
-    hog3 = get_hog_features(ch3, orientation, pix_per_cell, cell_per_block, feature_vec=False)
+    if hog_channel == "ALL":
+        hog2 = get_hog_features(ch2, orientation, pix_per_cell, cell_per_block, feature_vec=False)
+        hog3 = get_hog_features(ch3, orientation, pix_per_cell, cell_per_block, feature_vec=False)
     
     for xb in range(nxsteps):
         for yb in range(nysteps):
@@ -422,9 +426,12 @@ def find_cars(img, ystart, ystop, scale, svc, X_scaler, colorspace, orientation,
             xpos = xb*cells_per_step
             # Extract HOG for this patch
             hog_feat1 = hog1[ypos:ypos+nblocks_per_window, xpos:xpos+nblocks_per_window].ravel() 
-            hog_feat2 = hog2[ypos:ypos+nblocks_per_window, xpos:xpos+nblocks_per_window].ravel() 
-            hog_feat3 = hog3[ypos:ypos+nblocks_per_window, xpos:xpos+nblocks_per_window].ravel() 
-            hog_features = np.hstack((hog_feat1, hog_feat2, hog_feat3))
+            if hog_channel == "ALL":
+                hog_feat2 = hog2[ypos:ypos+nblocks_per_window, xpos:xpos+nblocks_per_window].ravel() 
+                hog_feat3 = hog3[ypos:ypos+nblocks_per_window, xpos:xpos+nblocks_per_window].ravel() 
+                hog_features = np.hstack((hog_feat1, hog_feat2, hog_feat3))
+            else:
+                hog_features = hog_feat1
 
             xleft = xpos*pix_per_cell
             ytop = ypos*pix_per_cell
