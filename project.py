@@ -215,6 +215,15 @@ def extract_features(imgs, cspace='RGB', orient=9,
     return features
 
 def setup_training_data():
+    # Training data is from video streams, so if we randomly shuffle all images to get training/validation data
+    # then the training and validation data will get almost the same images in them.
+    # Instead I'll manually separate 20% of each type of view for validation, and then shuffle the resulting
+    # training and validation data.
+    #   GTI_Far/ 834 files, 20% = 166, image0786.png - image0974.png (166 files)
+    #   GTI_Left/ 909 files, 20% = 181, image0781.png - image0974.png (179 files)
+    #   GTI_MiddleClose/  419 files, 20% = 84, image0400.png - image0494.png (83 files)
+    #   GTI_Right/ 664 files, 20% = 133, image0803.png  - image0160.png (132 files)
+    #   KITTI_extracted/ - these are all different enough, no manual sorting is necessary
     image_files_vehicle = glob.glob("vehicles/**/*.png")
     image_files_non_vehicle = glob.glob("non-vehicles/**/*.png")
 
