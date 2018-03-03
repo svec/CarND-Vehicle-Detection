@@ -17,6 +17,7 @@ from sklearn.svm import LinearSVC
 from sklearn.preprocessing import StandardScaler
 from skimage.feature import hog
 from sklearn.model_selection import train_test_split
+from sklearn.utils import shuffle
 
 # Import everything needed to edit/save/watch video clips
 from moviepy.editor import VideoFileClip
@@ -157,7 +158,7 @@ def get_hog_features(img, orient, pix_per_cell, cell_per_block,
                                   pixels_per_cell=(pix_per_cell, pix_per_cell),
                                   cells_per_block=(cell_per_block, cell_per_block), 
                                   block_norm= 'L2-Hys',
-                                  transform_sqrt=False,  # = True was causes 'nan' features
+                                  transform_sqrt=False,  # = True was causing 'nan' features
                                   visualise=vis,
                                   feature_vector=feature_vec)
         return features, hog_image
@@ -168,7 +169,7 @@ def get_hog_features(img, orient, pix_per_cell, cell_per_block,
                        pixels_per_cell=(pix_per_cell, pix_per_cell),
                        cells_per_block=(cell_per_block, cell_per_block), 
                        block_norm= 'L2-Hys',
-                       transform_sqrt=False,  # = True was causes 'nan' features
+                       transform_sqrt=False,  # = True was causing 'nan' features
                        visualise=vis, 
                        feature_vector=feature_vec)
         return features
@@ -214,11 +215,18 @@ def extract_features(imgs, cspace='RGB', orient=9,
     # Return list of feature vectors
     return features
 
+def split_list_at(list_to_split, length_of_last_part):
+    first_part = list_to_split[:-length_of_last_part]
+    last_part  = list_to_split[-length_of_last_part:]
+    return first_part, last_part
+
 def setup_training_data():
-    # Training data is from video streams, so if we randomly shuffle all images to get training/validation data
-    # then the training and validation data will get almost the same images in them.
+    # The 'vehicles/GTI*' images are from video streams, so if we randomly
+    # shuffle all images to get training/validation data then the training and
+    # validation data will get almost the same images in them.
     # Instead I'll manually separate 20% of each type of view for validation, and then shuffle the resulting
     # training and validation data.
+    # vehicles/:
     #   GTI_Far/ 834 files, 20% = 166, image0786.png - image0974.png (166 files)
     #   GTI_Left/ 909 files, 20% = 181, image0781.png - image0974.png (179 files)
     #   GTI_MiddleClose/  419 files, 20% = 84, image0400.png - image0494.png (83 files)
@@ -227,23 +235,74 @@ def setup_training_data():
     image_files_vehicle = glob.glob("vehicles/**/*.png")
     image_files_non_vehicle = glob.glob("non-vehicles/**/*.png")
 
+    print("Found {:d} vehicle images, {:d} non-vehicle images".format(len(image_files_vehicle), len(image_files_non_vehicle)))
+
+    image_files_vehicle_GTI_Far = glob.glob("vehicles/GTI_Far/*.png")
+    image_files_vehicle_GTI_Far_train, image_files_vehicle_GTI_Far_test = split_list_at(image_files_vehicle_GTI_Far, 166)
+
+    image_files_vehicle_GTI_Left = glob.glob("vehicles/GTI_Left/*.png")
+    image_files_vehicle_GTI_Left_train, image_files_vehicle_GTI_Left_test = split_list_at(image_files_vehicle_GTI_Left, 179)
+
+    image_files_vehicle_GTI_MiddleClose = glob.glob("vehicles/GTI_MiddleClose/*.png")
+    image_files_vehicle_GTI_MiddleClose_train, image_files_vehicle_GTI_MiddleClose_test = split_list_at(image_files_vehicle_GTI_MiddleClose, 83)
+
+    image_files_vehicle_GTI_Right = glob.glob("vehicles/GTI_Right/*.png")
+    image_files_vehicle_GTI_Right_train, image_files_vehicle_GTI_Right_test = split_list_at(image_files_vehicle_GTI_Right, 132)
+
+    image_files_vehicle_KITTI = glob.glob("vehicles/KITTI_extracted/*.png")
+    image_files_vehicle_KITTI_train, image_files_vehicle_KITTI_test = split_list_at(image_files_vehicle_KITTI, int(len(image_files_vehicle_KITTI)*0.2))
+
+
+    vehicle_train_lists = [image_files_vehicle_GTI_Far_train,
+                            image_files_vehicle_GTI_Left_train,
+                            image_files_vehicle_GTI_MiddleClose_train,
+                            image_files_vehicle_GTI_Right_train,
+                            image_files_vehicle_KITTI_train]
+    # This list comprehension flattens the list into a 1D list
+    # Stack Overflow explains it as:
+    #   flat_list = [item for sublist in l for item in sublist]
+    # means:
+    #   for sublist in l:
+    #       for item in sublist:
+    #           flat_list.append(item)
+    vehicle_train = [item for sublist in vehicle_train_lists for item in sublist]
+
+    vehicle_test_lists = [image_files_vehicle_GTI_Far_test,
+                            image_files_vehicle_GTI_Left_test,
+                            image_files_vehicle_GTI_MiddleClose_test,
+                            image_files_vehicle_GTI_Right_test,
+                            image_files_vehicle_KITTI_test]
+    vehicle_test = [item for sublist in vehicle_test_lists for item in sublist]
+
+    nonvehicle_train, nonvehicle_test = split_list_at(image_files_non_vehicle, int(len(image_files_non_vehicle)*0.2))
+
+    print("Created data sets of size:")
+    print("vehicle_train: {:5d} items = {:4.1f}% of total".format(len(vehicle_train), 100*len(vehicle_train)/len(image_files_vehicle)))
+    print("vehicle_test:  {:5d} items = {:4.1f}% of total".format(len(vehicle_test), 100*len(vehicle_test)/len(image_files_vehicle)))
+    print("nonvehicle_train: {:5d} items = {:4.1f}% of total".format(len(nonvehicle_train), 100*len(nonvehicle_train)/len(image_files_non_vehicle)))
+    print("nonvehicle_test:  {:5d} items = {:4.1f}% of total".format(len(nonvehicle_test), 100*len(nonvehicle_test)/len(image_files_non_vehicle)))
+
+
     if False: # for writeup
         plot_vehicle_images(image_files_vehicle, image_files_non_vehicle)
         return
 
-    print("Found {:d} vehicle images, {:d} non-vehicle images".format(len(image_files_vehicle), len(image_files_non_vehicle)))
-
     # Reduce the sample size for testing because HOG features are slow to compute
     sample_size = 0
     if sample_size == 0:
-        cars = image_files_vehicle
-        notcars = image_files_non_vehicle
+        cars_train = vehicle_train
+        cars_test = vehicle_test
+        notcars_train = nonvehicle_train
+        notcars_test = nonvehicle_test
     else:
         print("WARNING: using sample size:", sample_size)
-        cars = image_files_vehicle[0:sample_size]
-        notcars = image_files_non_vehicle[0:sample_size]
 
-    return cars, notcars
+        cars_train = vehicle_train[:sample_size]
+        cars_test = vehicle_test[:sample_size]
+        notcars_train = nonvehicle_train[:sample_size]
+        notcars_test = nonvehicle_test[:sample_size]
+
+    return cars_train, cars_test, notcars_train, notcars_test
 
 def setup_and_train_classifier():
     global hog_params
@@ -251,7 +310,7 @@ def setup_and_train_classifier():
     if args.verbose:
         print("Training classifier (this could take a few minutes)")
 
-    cars, notcars = setup_training_data()
+    cars_train, cars_test, notcars_train, notcars_test = setup_training_data()
 
     svc = None
 
@@ -270,7 +329,7 @@ def setup_and_train_classifier():
         hog_params["cell_per_block"] = cell_per_block
         hog_params["hog_channel"] = hog_channel
 
-        time_extract_hog, time_train, accuracy, svc = one_hog(cars, notcars, colorspace, orientation, pix_per_cell, cell_per_block, hog_channel)
+        time_extract_hog, time_train, accuracy, svc = one_hog(cars_train, cars_test, notcars_train, notcars_test, colorspace, orientation, pix_per_cell, cell_per_block, hog_channel)
 
         print("color:" + colorspace,
               "orien:" + str(orientation),
@@ -300,7 +359,7 @@ def setup_and_train_classifier():
                 for pix_per_cell in pixels_per_cell:
                     for cell_per_block in cells_per_block:
                         for hog_channel in hog_channels:
-                            time_extract_hog, time_train, accuracy, svc = one_hog(cars, notcars, colorspace, orientation, pix_per_cell, cell_per_block, hog_channel)
+                            time_extract_hog, time_train, accuracy, svc = one_hog(cars_train, cars_test, notcars_train, notcars_test, colorspace, orientation, pix_per_cell, cell_per_block, hog_channel)
                             print("color:" + colorspace,
                                   "orien:" + str(orientation),
                                   "pixel:" + str(pix_per_cell),
@@ -319,32 +378,42 @@ def test_trained_svc(trained_svc):
     accuracy = round(trained_svc.score(X_test, y_test), 4)
     print("test accuracy:", accuracy)
 
-def one_hog(cars, notcars, colorspace, orient, pix_per_cell, cell_per_block, hog_channel):
+def one_hog(cars_train, cars_test, notcars_train, notcars_test, colorspace, orient, pix_per_cell, cell_per_block, hog_channel):
     global X_train
     global X_test
     global y_train
     global y_test
     t=time.time()
-    car_features = extract_features(cars, cspace=colorspace, orient=orient, 
-                            pix_per_cell=pix_per_cell, cell_per_block=cell_per_block, 
-                            hog_channel=hog_channel)
-    notcar_features = extract_features(notcars, cspace=colorspace, orient=orient, 
-                            pix_per_cell=pix_per_cell, cell_per_block=cell_per_block, 
-                            hog_channel=hog_channel)
+    car_train_features = extract_features(cars_train, cspace=colorspace, orient=orient, 
+                                          pix_per_cell=pix_per_cell, cell_per_block=cell_per_block, 
+                                          hog_channel=hog_channel)
+    car_test_features = extract_features(cars_test, cspace=colorspace, orient=orient, 
+                                         pix_per_cell=pix_per_cell, cell_per_block=cell_per_block, 
+                                         hog_channel=hog_channel)
+    notcar_train_features = extract_features(notcars_train, cspace=colorspace, orient=orient, 
+                                             pix_per_cell=pix_per_cell, cell_per_block=cell_per_block, 
+                                             hog_channel=hog_channel)
+    notcar_test_features = extract_features(notcars_test, cspace=colorspace, orient=orient, 
+                                            pix_per_cell=pix_per_cell, cell_per_block=cell_per_block, 
+                                            hog_channel=hog_channel)
     t2 = time.time()
     time_extract_hog = t2-t
     #print(round(t2-t, 2), 'Seconds to extract HOG features...')
 
     # Create an array stack of feature vectors
-    X = np.vstack((car_features, notcar_features)).astype(np.float64)
+    X_train_preshuffle = np.vstack((car_train_features, notcar_train_features)).astype(np.float64)
+    X_test_preshuffle  = np.vstack((car_test_features, notcar_test_features)).astype(np.float64)
     
     # Define the labels vector
-    y = np.hstack((np.ones(len(car_features)), np.zeros(len(notcar_features))))
-    
-    # Split up data into randomized training and test sets
+    y_train_preshuffle = np.hstack((np.ones(len(car_train_features)), np.zeros(len(notcar_train_features))))
+    y_test_preshuffle  = np.hstack((np.ones(len(car_test_features)), np.zeros(len(notcar_test_features))))
+
     rand_state = np.random.randint(0, 100)
-    #X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=rand_state)
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)#rand_state)
+    X_train, y_train = shuffle(X_train_preshuffle, y_train_preshuffle, random_state = rand_state)
+    X_test, y_test   = shuffle(X_test_preshuffle, y_test_preshuffle, random_state = rand_state)
+
+    # Split up data into randomized training and test sets
+    #X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)#rand_state)
 
     if False: # Only needed if combining features other than HOG
         # Fit a per-column scaler
