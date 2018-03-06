@@ -77,7 +77,7 @@ class Subplotter:
         f, ax = plt.subplots(self.rows, self.cols, figsize=(14, 8))
         f.tight_layout()
 
-    def next(self, image, title=None, just_plot=False):
+    def next(self, image, title=None, just_plot=False, cmap='gray'):
         if self.current == 0:
             print("ERROR: subplot next called before setup")
             sys.exit(1)
@@ -91,7 +91,7 @@ class Subplotter:
         if just_plot:
             plt.plot(image)
         else:
-            plt.imshow(image.squeeze(), cmap='gray')
+            plt.imshow(image.squeeze(), cmap=cmap)
 
         if title:
             plt.title(title)
@@ -395,9 +395,15 @@ def one_hog(cars, notcars, colorspace, orient, pix_per_cell, cell_per_block, hog
 
 # Define a single function that can extract features using hog sub-sampling and make predictions
 # Based on the Udacity lesson.
-def find_cars(img, ystart, ystop, scale, svc, X_scaler, colorspace, orientation, pix_per_cell, cell_per_block, hog_channel, spatial_size, hist_bins):
-    
-    draw_img = np.copy(img)
+def find_cars(img, ystart, ystop, scale, svc, X_scaler, colorspace, orientation, pix_per_cell, cell_per_block, hog_channel, spatial_size, hist_bins, verbose_image, verbose_color=(0,0,255)):
+
+    show_all_boxes = False
+
+    if args.verbose:
+        show_all_boxes = True
+        #print("y: {:d}-{:d} = {:d} pixels, scale: {:f}".format(ystart, ystop, ystop-ystart+1, scale))
+        #cv2.rectangle(verbose_image, (0,ystart), (img.shape[1],ystop), verbose_color, 6) 
+
     rectangles_found = []
 
     img = img.astype(np.float32)/255
@@ -421,6 +427,10 @@ def find_cars(img, ystart, ystop, scale, svc, X_scaler, colorspace, orientation,
         imshape = ctrans_tosearch.shape
         ctrans_tosearch = cv2.resize(ctrans_tosearch, (np.int(imshape[1]/scale), np.int(imshape[0]/scale)))
         
+    #if args.verbose:
+        #plt.imshow(ctrans_tosearch)
+        #plt.show()
+
     if hog_channel == "ALL":
         ch1 = ctrans_tosearch[:,:,0]
         ch2 = ctrans_tosearch[:,:,1]
@@ -432,6 +442,12 @@ def find_cars(img, ystart, ystop, scale, svc, X_scaler, colorspace, orientation,
     nxblocks = (ch1.shape[1] // pix_per_cell) - cell_per_block + 1
     nyblocks = (ch1.shape[0] // pix_per_cell) - cell_per_block + 1 
     nfeat_per_block = orientation*cell_per_block**2
+    #print("nxblocks =", nxblocks, "= x_width  {:d} // pix_per_cell {:d} - cell_per_block {:d} + 1".format( \
+    #      ch1.shape[1], pix_per_cell, cell_per_block))
+    #print("nyblocks =", nyblocks, "= y_height {:d} // pix_per_cell {:d} - cell_per_block {:d} + 1".format( \
+    #      ch1.shape[0], pix_per_cell, cell_per_block))
+    #print("nfeat_per_block =", nfeat_per_block, "= orientation {:d} * cell_per_block {:d} ** 2".format( \
+    #      orientation, cell_per_block))
     
     # 64 was the orginal sampling rate, with 8 cells and 8 pix per cell
     window = 64
@@ -439,6 +455,7 @@ def find_cars(img, ystart, ystop, scale, svc, X_scaler, colorspace, orientation,
     cells_per_step = 2  # Instead of overlap, define how many cells to step
     nxsteps = (nxblocks - nblocks_per_window) // cells_per_step + 1
     nysteps = (nyblocks - nblocks_per_window) // cells_per_step + 1
+    #print("nxsteps, nysteps:", nxsteps, nysteps)
     
     # Compute individual channel HOG features for the entire image
     hog1 = get_hog_features(ch1, orientation, pix_per_cell, cell_per_block, feature_vec=False)
@@ -450,6 +467,8 @@ def find_cars(img, ystart, ystop, scale, svc, X_scaler, colorspace, orientation,
         for yb in range(nysteps):
             ypos = yb*cells_per_step
             xpos = xb*cells_per_step
+
+            #print("step x {:2d} y {:2d} : x,y: {:3d}, {:3d}".format(xb, yb, xpos, ypos))
             # Extract HOG for this patch
             hog_feat1 = hog1[ypos:ypos+nblocks_per_window, xpos:xpos+nblocks_per_window].ravel() 
             if hog_channel == "ALL":
@@ -480,15 +499,27 @@ def find_cars(img, ystart, ystop, scale, svc, X_scaler, colorspace, orientation,
             hog_features = hog_features.reshape(1,-1)
             test_prediction = svc.predict(hog_features)
             
-            if test_prediction == 1:
+            if (test_prediction == 1) or show_all_boxes:
                 xbox_left = np.int(xleft*scale)
                 ytop_draw = np.int(ytop*scale)
                 win_draw = np.int(window*scale)
                 upper_left = (xbox_left, ytop_draw+ystart)
                 lower_right = (xbox_left+win_draw,ytop_draw+win_draw+ystart)
-                #cv2.rectangle(draw_img, upper_left, lower_right, (0,0,255), 6) 
-                #print("rect:", upper_left, lower_right)
-                rectangles_found.append((upper_left, lower_right))
+                #print("  rect:", upper_left, lower_right)
+                if show_all_boxes:
+                    temp_color = verbose_color
+                    temp_width = 2
+                    if test_prediction == 1:
+                        temp_color = (255,0,0)
+                        temp_width = 6
+                    cv2.rectangle(verbose_image, upper_left, lower_right, temp_color, temp_width) 
+
+                if test_prediction == 1:
+                    rectangles_found.append((upper_left, lower_right))
+
+    if args.verbose:
+        print("Found", len(rectangles_found), "boxes")
+        #imshow_full_size(verbose_image)
                 
     #return draw_img
     return rectangles_found
@@ -529,34 +560,51 @@ def draw_labeled_bboxes(img, labels):
 
 def process_one_image(image, svc):
     global hog_params
-    ystart = 400
-    ystop = 656
-    scale = 1.5
     X_scaler = None
     spatial_size = None
     hist_bins = None
 
-    box_list = find_cars(image, ystart, ystop, scale, svc, X_scaler,
-    #out_img = find_cars(image, ystart, ystop, scale, svc, X_scaler,
+    verbose_image = np.copy(image)
+
+    box_list = []
+
+    find_car_runs = [  # ystart, ystop, scale, verbose_color
+                       [400, 464, 1.0, (0,0,255)],
+                       [416, 480, 1.0, (0,0,192)],
+                       [432, 496, 1.0, (0,0,128)],
+                       [464, 528, 1.0, (0,0,64)],
+
+                       #[400, 464, 1.0, (0,0,255)],
+
+                       [400, 528, 2.0, (255,255,0)],
+                       [528, 656, 2.0, (0,255,255)],
+                    ]
+    for run in find_car_runs:
+        ystart = run[0]
+        ystop = run[1]
+        scale = run[2]
+        verbose_color = run[3]
+        box_list += find_cars(image, ystart, ystop, scale, svc, X_scaler,
                                  hog_params["colorspace"],
                                  hog_params["orientation"],
                                  hog_params["pix_per_cell"],
                                  hog_params["cell_per_block"],
                                  hog_params["hog_channel"],
                                  spatial_size,
-                                 hist_bins)
+                                 hist_bins,
+                                 verbose_image,
+                                 verbose_color = verbose_color)
 
     out_img = draw_boxes(image, box_list, color=(255,0,0),thick=6)
 
-    plt.imshow(out_img)
-    plt.show()
+    #imshow_full_size(out_img)
 
     # Add heat to each box in box list
     heat = np.zeros_like(image[:,:,0]).astype(np.float)
     heat = add_heat(heat,box_list)
     
     # Apply threshold to help remove false positives
-    heat = apply_threshold(heat,0)
+    heat = apply_threshold(heat,1)
 
     # Visualize the heatmap when displaying    
     heatmap = np.clip(heat, 0, 255)
@@ -565,15 +613,12 @@ def process_one_image(image, svc):
     labels = label(heatmap)
     draw_img = draw_labeled_bboxes(np.copy(image), labels)
 
-    fig = plt.figure()
-    plt.subplot(121)
-    plt.imshow(draw_img)
-    plt.title('Car Positions')
-    plt.subplot(122)
-    plt.imshow(heatmap, cmap='hot')
-    plt.title('Heat Map')
-    fig.tight_layout()
-    plt.show()
+    g_subplotter.setup(cols=2, rows=2)
+    g_subplotter.next(verbose_image)
+    g_subplotter.next(out_img)
+    g_subplotter.next(draw_img)
+    g_subplotter.next(heatmap, cmap='hot')
+    g_subplotter.show()
 
 def process_image_file(image_filename, svc):
     global g_filename
