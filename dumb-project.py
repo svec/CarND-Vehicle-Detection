@@ -49,6 +49,18 @@ hog_params = {}
 # _ 5. Run your pipeline on a video stream (start with the test_video.mp4 and later implement on full project_video.mp4) and create a heat map of recurring detections frame by frame to reject outliers and follow detected vehicles.
 # _ 6. Estimate a bounding box for vehicles detected.
 
+# Here is your draw_boxes function from the previous exercise
+# Based on the  Udacity lesson
+def draw_boxes(img, bboxes, color=(0, 0, 255), thick=6):
+    # Make a copy of the image
+    imcopy = np.copy(img)
+    # Iterate through the bounding boxes
+    for bbox in bboxes:
+        # Draw a rectangle given bbox coordinates
+        cv2.rectangle(imcopy, bbox[0], bbox[1], color, thick)
+    # Return the image copy with boxes drawn
+    return imcopy
+
 class Subplotter:
     # Handle subplots intelligently.
     def __init__(self):
@@ -255,11 +267,11 @@ def setup_and_train_classifier():
 
     svc = None
 
-    run_for_real = False
+    run_for_real = True
 
     if run_for_real:
-        colorspace = 'YUV' #'LUV' # Can be RGB, HSV, LUV, HLS, YUV, YCrCb
-        orientation = 11 #9
+        colorspace = 'YUV' # Can be RGB, HSV, LUV, HLS, YUV, YCrCb
+        orientation = 10
         pix_per_cell = 16
         cell_per_block = 2
         hog_channel = "ALL" # Can be 0, 1, 2, or "ALL"
@@ -285,8 +297,10 @@ def setup_and_train_classifier():
         test_trained_svc(svc)
 
     else:
+        sys.stdout.flush()
+
         # Training runs
-        colorspaces = ['RGB', 'HSV', 'LUV', 'HLS', 'YUV', 'YCrCb']
+        colorspaces = ['LUV', 'YUV', 'RGB', 'HSV', 'HLS', 'YCrCb']
         orientations = [6, 7, 8, 9, 10, 11, 12]
         pixels_per_cell = [8, 16, 32]
         cells_per_block = [2]
@@ -352,9 +366,9 @@ def one_hog(cars, notcars, colorspace, orient, pix_per_cell, cell_per_block, hog
         X_train = X_scaler.transform(X_train)
         X_test = X_scaler.transform(X_test)
     
-    print('Using:',orient,'orientations',pix_per_cell,
-        'pixels per cell and', cell_per_block,'cells per block')
-    print('Feature vector length:', len(X_train[0]))
+    #print('Using:',orient,'orientations',pix_per_cell,
+        #'pixels per cell and', cell_per_block,'cells per block')
+    #print('Feature vector length:', len(X_train[0]))
     # Use a linear SVC 
     svc = LinearSVC()
     # Check the training time for the SVC
@@ -365,6 +379,7 @@ def one_hog(cars, notcars, colorspace, orient, pix_per_cell, cell_per_block, hog
     #print(round(t2-t, 2), 'Seconds to train SVC...')
     # Check the score of the SVC
     accuracy = round(svc.score(X_test, y_test), 4)
+    return time_extract_hog, time_train, accuracy, svc
 
     print('Test Accuracy of SVC = ', round(svc.score(X_test, y_test), 4))
     # Check the prediction time for a single sample
@@ -382,6 +397,8 @@ def one_hog(cars, notcars, colorspace, orient, pix_per_cell, cell_per_block, hog
 def find_cars(img, ystart, ystop, scale, svc, X_scaler, colorspace, orientation, pix_per_cell, cell_per_block, hog_channel, spatial_size, hist_bins):
     
     draw_img = np.copy(img)
+    rectangles_found = []
+
     img = img.astype(np.float32)/255
     
     img_tosearch = img[ystart:ystop,:,:]
@@ -467,8 +484,10 @@ def find_cars(img, ystart, ystop, scale, svc, X_scaler, colorspace, orientation,
                 ytop_draw = np.int(ytop*scale)
                 win_draw = np.int(window*scale)
                 cv2.rectangle(draw_img,(xbox_left, ytop_draw+ystart),(xbox_left+win_draw,ytop_draw+win_draw+ystart),(0,0,255),6) 
+                #rectangles_found.append(((xbox_left, ytop_draw+ystart),(xbox_left+win_draw,ytop_draw+win_draw+ystart)))
                 
     return draw_img
+    #return rectangles_found
     
 def process_one_image(image, svc):
     global hog_params
@@ -479,14 +498,17 @@ def process_one_image(image, svc):
     spatial_size = None
     hist_bins = None
 
+    #rectangles_found = find_cars(image, ystart, ystop, scale, svc, X_scaler,
     out_img = find_cars(image, ystart, ystop, scale, svc, X_scaler,
-                        hog_params["colorspace"],
-                        hog_params["orientation"],
-                        hog_params["pix_per_cell"],
-                        hog_params["cell_per_block"],
-                        hog_params["hog_channel"],
-                        spatial_size,
-                        hist_bins)
+                                 hog_params["colorspace"],
+                                 hog_params["orientation"],
+                                 hog_params["pix_per_cell"],
+                                 hog_params["cell_per_block"],
+                                 hog_params["hog_channel"],
+                                 spatial_size,
+                                 hist_bins)
+
+    #out_img = draw_boxes(image, rectangles_found, color=(255,0,0),thick=6)
 
     plt.imshow(out_img)
     plt.show()
