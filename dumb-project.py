@@ -29,16 +29,18 @@ parser.add_argument("-v", '--verbose', action='store_true', help="be verbose")
 parser.add_argument("-t", '--train', action='store_true', help="setup & train classifier")
 parser.add_argument("-n", '--num_images', type=int, help="number of images to process")
 parser.add_argument("-f", '--image_files', type=str, help="file(s) to process, uses glob so you should use '' for expansion")
-#parser.add_argument("-m", '--video', action='store_true', help="process video instead of images")
+parser.add_argument("-m", '--video', action='store_true', help="process video instead of images")
 args = parser.parse_args()
 
 g_error_frames = 0
 g_filename = "none"
 
+g_debug_internal = True
 X_train = None
 X_test = None
 y_train = None
 y_test = None
+svc = None
 hog_params = {}
 
 # The goals / steps of this project are the following:
@@ -397,9 +399,11 @@ def one_hog(cars, notcars, colorspace, orient, pix_per_cell, cell_per_block, hog
 # Based on the Udacity lesson.
 def find_cars(img, ystart, ystop, scale, svc, X_scaler, colorspace, orientation, pix_per_cell, cell_per_block, hog_channel, spatial_size, hist_bins, verbose_image, verbose_color=(0,0,255)):
 
+    global g_debug_internal
+
     show_all_boxes = False
 
-    if args.verbose:
+    if args.verbose and g_debug_internal:
         show_all_boxes = True
         #print("y: {:d}-{:d} = {:d} pixels, scale: {:f}".format(ystart, ystop, ystop-ystart+1, scale))
         #cv2.rectangle(verbose_image, (0,ystart), (img.shape[1],ystop), verbose_color, 6) 
@@ -427,10 +431,6 @@ def find_cars(img, ystart, ystop, scale, svc, X_scaler, colorspace, orientation,
         imshape = ctrans_tosearch.shape
         ctrans_tosearch = cv2.resize(ctrans_tosearch, (np.int(imshape[1]/scale), np.int(imshape[0]/scale)))
         
-    #if args.verbose:
-        #plt.imshow(ctrans_tosearch)
-        #plt.show()
-
     if hog_channel == "ALL":
         ch1 = ctrans_tosearch[:,:,0]
         ch2 = ctrans_tosearch[:,:,1]
@@ -517,7 +517,7 @@ def find_cars(img, ystart, ystop, scale, svc, X_scaler, colorspace, orientation,
                 if test_prediction == 1:
                     rectangles_found.append((upper_left, lower_right))
 
-    if args.verbose:
+    if args.verbose and g_debug_internal:
         print("Found", len(rectangles_found), "boxes")
         #imshow_full_size(verbose_image)
                 
@@ -558,7 +558,8 @@ def draw_labeled_bboxes(img, labels):
     # Return the image
     return img
 
-def process_one_image(image, svc):
+def process_image(image):
+    global svc
     global hog_params
     X_scaler = None
     spatial_size = None
@@ -569,15 +570,21 @@ def process_one_image(image, svc):
     box_list = []
 
     find_car_runs = [  # ystart, ystop, scale, verbose_color
+                       # 1.0 scaling factor looks at 64x64 chunks
                        [400, 464, 1.0, (0,0,255)],
                        [416, 480, 1.0, (0,0,192)],
                        [432, 496, 1.0, (0,0,128)],
                        [464, 528, 1.0, (0,0,64)],
 
-                       #[400, 464, 1.0, (0,0,255)],
+                       # 1.5 scaling factor looks at 96x96 chunks
+                       [400, 496, 1.5, (0,255,0)],
+                       [432, 528, 1.5, (0,192,0)],
+                       [464, 560, 1.5, (0,128,0)],
 
-                       [400, 528, 2.0, (255,255,0)],
-                       [528, 656, 2.0, (0,255,255)],
+                       # 2.0 scaling factor looks at 128x128 chunks
+                       #[400, 528, 2.0, (0,255,255)],
+                       #[464, 592, 2.0, (0,192,255)],
+                       #[528, 656, 2.0, (0,255,192)],
                     ]
     for run in find_car_runs:
         ystart = run[0]
@@ -595,9 +602,8 @@ def process_one_image(image, svc):
                                  verbose_image,
                                  verbose_color = verbose_color)
 
-    out_img = draw_boxes(image, box_list, color=(255,0,0),thick=6)
-
-    #imshow_full_size(out_img)
+    if g_debug_internal:
+        out_img = draw_boxes(image, box_list, color=(255,0,0),thick=6)
 
     # Add heat to each box in box list
     heat = np.zeros_like(image[:,:,0]).astype(np.float)
@@ -613,12 +619,16 @@ def process_one_image(image, svc):
     labels = label(heatmap)
     draw_img = draw_labeled_bboxes(np.copy(image), labels)
 
-    g_subplotter.setup(cols=2, rows=2)
-    g_subplotter.next(verbose_image)
-    g_subplotter.next(out_img)
-    g_subplotter.next(draw_img)
-    g_subplotter.next(heatmap, cmap='hot')
-    g_subplotter.show()
+    if g_debug_internal:
+        global g_filename
+        g_subplotter.setup(cols=2, rows=2)
+        g_subplotter.next(verbose_image, title=str(g_filename))
+        g_subplotter.next(out_img)
+        g_subplotter.next(draw_img)
+        g_subplotter.next(heatmap, cmap='hot')
+        g_subplotter.show()
+
+    return draw_img
 
 def process_image_file(image_filename, svc):
     global g_filename
@@ -628,22 +638,109 @@ def process_image_file(image_filename, svc):
         print(image_filename)
 
     image = mpimg.imread(image_filename) # reads in as RGB
-    process_one_image(image, svc)
+    image = process_image(image)
+    return image
 
 def process_images(svc, num, filenames=None):
+    global g_debug_internal
+
     if filenames:
         image_filenames = glob.glob(filenames)
         #image_filenames = image_filenames + glob.glob('test_images/*.jpg')
     else:
         image_filenames = glob.glob('test_images/*.jpg')
+        video_frames = [
+            "video-frame-0-0.jpg",
+            "video-frame-1-0.jpg",
+            "video-frame-2-0.jpg",
+            "video-frame-3-0.jpg",
+            "video-frame-4-0.jpg",
+            "video-frame-5-0.jpg",
+            "video-frame-6-0.jpg",
+            "video-frame-7-0.jpg",
+            "video-frame-8-0.jpg",
+            "video-frame-9-0.jpg",
+            "video-frame-10-0.jpg",
+            "video-frame-11-0.jpg",
+            "video-frame-12-0.jpg",
+            "video-frame-13-0.jpg",
+            "video-frame-14-0.jpg",
+            "video-frame-15-0.jpg",
+            "video-frame-16-0.jpg",
+            "video-frame-17-0.jpg",
+            "video-frame-18-0.jpg",
+            "video-frame-19-0.jpg",
+            "video-frame-20-0.jpg",
+            "video-frame-21-0.jpg",
+            "video-frame-22-0.jpg",
+            "video-frame-23-0.jpg",
+            "video-frame-24-0.jpg",
+            "video-frame-25-0.jpg",
+            "video-frame-26-0.jpg",
+            "video-frame-27-0.jpg",
+            "video-frame-28-0.jpg",
+            "video-frame-29-0.jpg",
+            "video-frame-30-0.jpg",
+            "video-frame-31-0.jpg",
+            "video-frame-32-0.jpg",
+            "video-frame-33-0.jpg",
+            "video-frame-34-0.jpg",
+            "video-frame-35-0.jpg",
+            "video-frame-36-0.jpg",
+            "video-frame-37-0.jpg",
+            "video-frame-38-0.jpg",
+            "video-frame-39-0.jpg",
+            "video-frame-40-0.jpg",
+            "video-frame-41-0.jpg",
+            "video-frame-42-0.jpg",
+            "video-frame-43-0.jpg",
+            "video-frame-44-0.jpg",
+            "video-frame-45-0.jpg",
+            "video-frame-46-0.jpg",
+            "video-frame-47-0.jpg",
+            "video-frame-48-0.jpg",
+            "video-frame-49-0.jpg",
+        ]
+        image_filenames = video_frames
+
+    g_debug_internal = True
 
     #print("files:", image_filenames)
     count = 0
     for image_filename in image_filenames:
         if (num != None) and (count >= num):
             break
-        process_image_file(image_filename, svc)
+        image = process_image_file(image_filename, svc)
+        if g_debug_internal == False:
+            plt.imshow(image)
+            plt.show()
         count = count + 1
+
+def process_video(filename):
+    global g_debug_internal
+    g_debug_internal = False
+    base_filename, file_ext = os.path.splitext(os.path.basename(filename))
+    output_filename_no_ext = os.path.join(".", base_filename)
+    output = output_filename_no_ext + "_processed" + file_ext
+
+    # Note: use this to extract 1 jpg per second from a video:
+    # -ss is the start time (19 seconds)
+    # -t is the time to run the video (5 seconds)
+    # -i is the input file
+    # -r is the frame rate at which to grab jpgs (1.0 per second)
+    # %4d adds an auto-incrementing file name
+    # ffmpeg -ss 00:00:19 -t 00:00:05 -i project_video.mp4 -r 1.0 testout%4d.jpg
+    clip = VideoFileClip(filename)
+    #NOTE: fl_image() expects color images!!
+    processed_clip = clip.fl_image(process_image)#.subclip(19,30) # seconds
+    processed_clip.write_videofile(output, audio=False)
+
+def dump_video_to_jpg():
+    clip = VideoFileClip("project_video.mp4")
+
+    for second in range(int(clip.duration)):
+        out_filename = "video-frame-{:d}-0.jpg".format(second)
+        clip.save_frame(out_filename, t=second) # saves the frame at time = t seconds
 
 def main():
     global X_train
@@ -651,6 +748,7 @@ def main():
     global y_train
     global y_test
     global hog_params
+    global svc
 
     if args.verbose:
         print("being verbose")
@@ -681,6 +779,10 @@ def main():
         print("hog_params:", hog_params)
         test_trained_svc(svc)
 
+    if args.video:
+        #dump_video_to_jpg()
+        process_video("project_video.mp4")
+    else:
         process_images(svc, args.num_images, args.image_files)
 
 if __name__ == "__main__":
