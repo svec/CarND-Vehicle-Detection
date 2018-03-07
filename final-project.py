@@ -771,7 +771,7 @@ def main():
     if args.verbose:
         print("being verbose")
 
-    pickle_filename = "dumb-trained-svc.p"
+    pickle_filename = "final-trained-svc.p"
     svc = None
 
     if args.train:
