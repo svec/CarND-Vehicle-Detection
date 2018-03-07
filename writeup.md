@@ -5,6 +5,8 @@
 
 **Vehicle Detection Project**
 
+**For Christopher Svec**
+
 The goals / steps of this project are the following:
 
 * Perform a Histogram of Oriented Gradients (HOG) feature extraction on a labeled training set of images and train a classifier Linear SVM classifier
@@ -30,38 +32,57 @@ The goals / steps of this project are the following:
 ---
 ### Writeup / README
 
-#### 1. Provide a Writeup / README that includes all the rubric points and how you addressed each one.  You can submit your writeup as markdown or pdf.  [Here](https://github.com/udacity/CarND-Vehicle-Detection/blob/master/writeup_template.md) is a template writeup for this project you can use as a guide and a starting point.  
+#### 1. Provide a Writeup / README that includes all the rubric points and how you addressed each one. 
 
 You're reading it!
+
+All code and line numbers refer to the project file final_project.py.
 
 ### Histogram of Oriented Gradients (HOG)
 
 #### 1. Explain how (and identify where in your code) you extracted HOG features from the training images.
 
-The code for this step is contained in the first code cell of the IPython notebook (or in lines # through # of the file called `some_file.py`).  
+The code for this step is mostly in the functions setup_and_train_classifier()
+starting on line 263, which calls the function one_hog() starting on line 339.
 
-I started by reading in all the `vehicle` and `non-vehicle` images.  Here is an example of one of each of the `vehicle` and `non-vehicle` classes:
+I started by reading in all the `vehicle` and `non-vehicle` images as provided
+by Udacity.  Here is an example of some of each of the `vehicle` and
+`non-vehicle` classes:
 
 ![alt text][image1]
 
 I then explored different color spaces and different `skimage.hog()` parameters (`orientations`, `pixels_per_cell`, and `cells_per_block`).  I grabbed random images from each of the two classes and displayed them to get a feel for what the `skimage.hog()` output looks like.
 
-Here is an example using the `YCrCb` color space and HOG parameters of `orientations=8`, `pixels_per_cell=(8, 8)` and `cells_per_block=(2, 2)`:
-
+Here is an example using the `YCrCb` color space and HOG parameters of `orientations=9`, `pixels_per_cell=(8, 8)` and `cells_per_block=(2, 2)`:
 
 ![alt text][image2]
 
 #### 2. Explain how you settled on your final choice of HOG parameters.
 
-I tried various combinations of parameters and...
+I ran many training runs across different color space, orientation,
+pixels_per_cell, cells_per_block, and channel # using the SVM described in the
+next section.
+
+I chose the parameters that yielded a high accuracy, XX%, that trained well.
+Some of the high accuracy runs did not seem to produce good classification
+results when run on real images, so I used trial and error to find parameters
+that worked.
 
 #### 3. Describe how (and identify where in your code) you trained a classifier using your selected HOG features (and color features if you used them).
 
-I trained a linear SVM using...
+I trained a linear SVM (class LinearSVC) using the one_hog() function mentioned earlier.
+one_hog() calls extract_features() which actually extracts the HOG features
+from the images. I shuffled the car and not-car data using train_test_split(),
+and then trained the SVM using the LinearSVC.fit() function.
+
+I tested its accuracy using 20% of the shuffled input data set using the LinearSVC().score() function.
+
+The HOG features performed well enough that I did not attempt to add other features.
 
 ### Sliding Window Search
 
 #### 1. Describe how (and identify where in your code) you implemented a sliding window search.  How did you decide what scales to search and how much to overlap windows?
+
 
 I decided to search random window positions at random scales all over the image and came up with this (ok just kidding I didn't actually ;):
 

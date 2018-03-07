@@ -273,9 +273,9 @@ def setup_and_train_classifier():
     run_for_real = True
 
     if run_for_real:
-        colorspace = 'YUV' # Can be RGB, HSV, LUV, HLS, YUV, YCrCb
-        orientation = 10
-        pix_per_cell = 16
+        colorspace = 'YCrCb'#'YUV' # Can be RGB, HSV, LUV, HLS, YUV, YCrCb
+        orientation = 9
+        pix_per_cell = 8#16
         cell_per_block = 2
         hog_channel = "ALL" # Can be 0, 1, 2, or "ALL"
 
@@ -517,8 +517,8 @@ def find_cars(img, ystart, ystop, scale, svc, X_scaler, colorspace, orientation,
                 if test_prediction == 1:
                     rectangles_found.append((upper_left, lower_right))
 
-    if args.verbose and g_debug_internal:
-        print("Found", len(rectangles_found), "boxes")
+    #if args.verbose and g_debug_internal:
+        #print("Found", len(rectangles_found), "boxes")
         #imshow_full_size(verbose_image)
                 
     #return draw_img
@@ -558,9 +558,24 @@ def draw_labeled_bboxes(img, labels):
     # Return the image
     return img
 
+class VehicleRects:
+    # This class will track the previous num_frames worth of
+    # rectangles around found vehicles.
+    def __init__(self, num_frames):
+        self.rectangles = []
+        self.num_frames = num_frames
+
+    def add_new_rectangles(self, rectangles):
+        if len(self.rectangles) >= self.num_frames:
+            del self.rectangles[0]
+        self.rectangles.append(rectangles)
+
+g_vehicle_rects = VehicleRects(num_frames=3)
+
 def process_image(image):
     global svc
     global hog_params
+    global g_vehicle_rects
     X_scaler = None
     spatial_size = None
     hist_bins = None
@@ -582,9 +597,9 @@ def process_image(image):
                        [464, 560, 1.5, (0,128,0)],
 
                        # 2.0 scaling factor looks at 128x128 chunks
-                       #[400, 528, 2.0, (0,255,255)],
-                       #[464, 592, 2.0, (0,192,255)],
-                       #[528, 656, 2.0, (0,255,192)],
+                       [400, 528, 2.0, (0,255,255)],
+                       [464, 592, 2.0, (0,192,255)],
+                       [528, 656, 2.0, (0,255,192)],
                     ]
     for run in find_car_runs:
         ystart = run[0]
@@ -605,9 +620,12 @@ def process_image(image):
     if g_debug_internal:
         out_img = draw_boxes(image, box_list, color=(255,0,0),thick=6)
 
-    # Add heat to each box in box list
+    g_vehicle_rects.add_new_rectangles(box_list)
+
+    # Add heat to each box in the most recent box lists
     heat = np.zeros_like(image[:,:,0]).astype(np.float)
-    heat = add_heat(heat,box_list)
+    for rect_list in g_vehicle_rects.rectangles:
+        heat = add_heat(heat,rect_list)
     
     # Apply threshold to help remove false positives
     heat = apply_threshold(heat,1)
@@ -777,13 +795,14 @@ def main():
         hog_params = svc_pickle["hog_params"]
         print("Read trained SVM data from", pickle_filename)
         print("hog_params:", hog_params)
-        test_trained_svc(svc)
+        #test_trained_svc(svc)
 
-    if args.video:
-        #dump_video_to_jpg()
-        process_video("project_video.mp4")
-    else:
-        process_images(svc, args.num_images, args.image_files)
+        if args.video:
+            #dump_video_to_jpg()
+            process_video("project_video.mp4")
+            #process_video("test_video.mp4")
+        else:
+            process_images(svc, args.num_images, args.image_files)
 
 if __name__ == "__main__":
     main()
