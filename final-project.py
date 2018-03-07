@@ -244,6 +244,7 @@ def setup_training_data():
 
     if False: # for writeup
         plot_vehicle_images(image_files_vehicle, image_files_non_vehicle)
+        sys.exit(1)
         return
 
     print("Found {:d} vehicle images, {:d} non-vehicle images".format(len(image_files_vehicle), len(image_files_non_vehicle)))
@@ -570,6 +571,9 @@ class VehicleRects:
             del self.rectangles[0]
         self.rectangles.append(rectangles)
 
+    def clear(self):
+        self.rectangles = []
+
 g_vehicle_rects = VehicleRects(num_frames=3)
 
 def process_image(image):
@@ -641,8 +645,8 @@ def process_image(image):
         global g_filename
         g_subplotter.setup(cols=2, rows=2)
         g_subplotter.next(verbose_image, title=str(g_filename))
-        g_subplotter.next(out_img)
         g_subplotter.next(draw_img)
+        g_subplotter.next(out_img, title=str(g_filename))
         g_subplotter.next(heatmap, cmap='hot')
         g_subplotter.show()
 
@@ -722,12 +726,14 @@ def process_images(svc, num, filenames=None):
         image_filenames = video_frames
 
     g_debug_internal = True
+    global g_vehicle_rects
 
     #print("files:", image_filenames)
     count = 0
     for image_filename in image_filenames:
         if (num != None) and (count >= num):
             break
+        #g_vehicle_rects.clear()
         image = process_image_file(image_filename, svc)
         if g_debug_internal == False:
             plt.imshow(image)
@@ -756,9 +762,24 @@ def process_video(filename):
 def dump_video_to_jpg():
     clip = VideoFileClip("project_video.mp4")
 
-    for second in range(int(clip.duration)):
-        out_filename = "video-frame-{:d}-0.jpg".format(second)
-        clip.save_frame(out_filename, t=second) # saves the frame at time = t seconds
+    clip.save_frame("video-39-20.jpg", t='00:00:35.76')
+    clip.save_frame("video-39-21.jpg", t='00:00:35.80')
+    clip.save_frame("video-39-22.jpg", t='00:00:35.84')
+    clip.save_frame("video-39-23.jpg", t='00:00:35.88')
+    clip.save_frame("video-39-24.jpg", t='00:00:35.92')
+    clip.save_frame("video-39-25.jpg", t='00:00:35.96')
+    clip.save_frame("video-40-00.jpg", t='00:00:40.00')
+    clip.save_frame("video-40-01.jpg", t='00:00:40.04')
+    clip.save_frame("video-40-02.jpg", t='00:00:40.08')
+    clip.save_frame("video-40-03.jpg", t='00:00:40.12')
+    clip.save_frame("video-40-04.jpg", t='00:00:40.16')
+    clip.save_frame("video-40-05.jpg", t='00:00:40.20')
+    clip.save_frame("video-40-06.jpg", t='00:00:40.24')
+    clip.save_frame("video-40-07.jpg", t='00:00:40.28')
+
+    #for second in range(int(clip.duration)):
+        #out_filename = "video-frame-{:d}-0.jpg".format(second)
+        #clip.save_frame(out_filename, t=second) # saves the frame at time = t seconds
 
 def main():
     global X_train
